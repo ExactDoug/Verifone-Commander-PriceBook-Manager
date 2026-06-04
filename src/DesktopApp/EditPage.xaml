@@ -51,9 +51,9 @@
 
                 <TextBox Grid.Column="0"
                             x:Name="EanTextBox"
-                            Header="EAN"
+                            Header="UPC"
                             Text="{x:Bind ViewModel.Ean.Text, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                            PlaceholderText="Enter a EAN-13 code"
+                            PlaceholderText="UPC-A, EAN-13, or GTIN-14"
                             GotFocus="EanTextBox_GotFocus" />
                 <TextBox Grid.Column="2"
                             Header="Modifier"
@@ -64,6 +64,12 @@
             <TextBlock Text="{x:Bind ViewModel.Ean.Error, Mode=OneWay}"
                         Visibility="{x:Bind ViewModel.Ean.HasError, Mode=OneWay}"
                         Foreground="{ThemeResource SystemErrorTextColor}"
+                        TextWrapping="WrapWholeWords" />
+            <TextBlock Text="{x:Bind ViewModel.UpcStatusText, Mode=OneWay}"
+                        Visibility="{x:Bind ViewModel.HasUpcStatus, Mode=OneWay}"
+                        ToolTipService.ToolTip="{x:Bind ViewModel.UpcStatusTooltip, Mode=OneWay}"
+                        Foreground="{x:Bind ViewModel.UpcStatusSeverity, Mode=OneWay, Converter={StaticResource UpcSeverityToBrushConverter}}"
+                        FontWeight="Bold"
                         TextWrapping="WrapWholeWords" />
             <TextBlock Text="{x:Bind ViewModel.Modifier.Error, Mode=OneWay}"
                         Visibility="{x:Bind ViewModel.Modifier.HasError, Mode=OneWay}"

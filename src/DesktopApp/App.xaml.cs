@@ -24,6 +24,8 @@ namespace VerifoneCommander.PriceBookManager.DesktopApp
     /// </summary>
     public partial class App : Application
     {
+        private static Settings activeSettings;
+
         private readonly Settings settings = new Settings();
 
         private Window window;
@@ -52,29 +54,38 @@ namespace VerifoneCommander.PriceBookManager.DesktopApp
             var messenger = WeakReferenceMessenger.Default;
             var logger = this.loggerFactory.CreateLogger<App>();
 
-            IModifiableSapphireCredentialsProvider credentialsProvider;
-            ISapphireClient sapphireClient;
+            // Build BOTH the mock and the live graphs and route between them at call
+            // time via a switchable wrapper, so the mock/live setting can be changed
+            // without restarting. The active mode is read fresh from Settings on each
+            // call; toggling the setting forces a clean re-login (see SettingsPageVm /
+            // AccountPageVm) so the cache is repopulated from the selected backend.
+            App.activeSettings = this.settings;
 
-            if (this.settings.UseMocks)
-            {
-                credentialsProvider = new MockCredentialProvider();
-                sapphireClient = new MockSapphireClient();
-            }
-            else
-            {
-#pragma warning disable CA2000 // Dispose objects before losing scope
-                var httpRequestSender = new HttpClientHttpRequestSender(() => this.settings.AllowUntrustedCertificates);
+            var mockCredentialsProvider = new MockCredentialProvider();
+            var mockSapphireClient = new MockSapphireClient();
+
+#pragma warning disable CA2000 // Dispose objects before losing scope (lives for the app lifetime)
+            var httpRequestSender = new HttpClientHttpRequestSender(() => this.settings.AllowUntrustedCertificates);
 #pragma warning restore CA2000 // Dispose objects before losing scope
 
-                credentialsProvider = new SapphireCredentialProvider(
-                    httpRequestSender,
-                    this.loggerFactory.CreateLogger<SapphireCredentialProvider>());
+            var liveCredentialsProvider = new SapphireCredentialProvider(
+                httpRequestSender,
+                this.loggerFactory.CreateLogger<SapphireCredentialProvider>());
 
-                sapphireClient = new SapphireClient(
-                    httpRequestSender,
-                    credentialsProvider,
-                    this.loggerFactory.CreateLogger<SapphireClient>());
-            }
+            var liveSapphireClient = new SapphireClient(
+                httpRequestSender,
+                liveCredentialsProvider,
+                this.loggerFactory.CreateLogger<SapphireClient>());
+
+            IModifiableSapphireCredentialsProvider credentialsProvider = new SwitchableSapphireCredentialsProvider(
+                () => this.settings.UseMocks,
+                mockCredentialsProvider,
+                liveCredentialsProvider);
+
+            ISapphireClient sapphireClient = new SwitchableSapphireClient(
+                () => this.settings.UseMocks,
+                mockSapphireClient,
+                liveSapphireClient);
 
             var cachingSapphireClient = new CachingSapphireClient(sapphireClient);
             var fileSystem = new FileSystem(this.loggerFactory.CreateLogger<FileSystem>());
@@ -93,6 +104,11 @@ namespace VerifoneCommander.PriceBookManager.DesktopApp
 
         public static IAppViewModelResolver ViewModelResolver { get; private set; }
 
+        public static Window MainWindow { get; private set; }
+
+        /// <summary>Gets a value indicating whether the app is currently using mock data (reads the live setting).</summary>
+        public static bool IsMockMode => activeSettings?.UseMocks ?? false;
+
         public static string AppDataFolderPath => Windows.Storage.ApplicationData.Current.LocalFolder.Path;
 
         /// <summary>
@@ -103,6 +119,7 @@ namespace VerifoneCommander.PriceBookManager.DesktopApp
         {
             this.window = new MainWindow();
             this.window.Closed += this.Window_Closed;
+            MainWindow = this.window;
 
             this.window.Activate();
         }
@@ -128,7 +145,22 @@ namespace VerifoneCommander.PriceBookManager.DesktopApp
                 return;
             }
 
-            var parsed = JsonConvert.DeserializeObject<Settings>(File.ReadAllText(settingsFilePath));
+            Settings parsed;
+            try
+            {
+                parsed = JsonConvert.DeserializeObject<Settings>(File.ReadAllText(settingsFilePath));
+            }
+            catch (Exception)
+            {
+                // Corrupt or unreadable settings file — fall back to defaults rather
+                // than crashing at startup. (Logging isn't available this early.)
+                return;
+            }
+
+            if (parsed == null)
+            {
+                return;
+            }
 
             this.settings.UseMocks = parsed.UseMocks;
             this.settings.Hostname = parsed.Hostname;

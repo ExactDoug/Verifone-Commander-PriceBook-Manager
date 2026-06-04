@@ -10,6 +10,7 @@ namespace VerifoneCommander.PriceBookManager.DesktopApp.ViewModels
     using CommunityToolkit.Mvvm.Messaging;
     using Microsoft.Extensions.Logging;
     using VerifoneCommander.PriceBookManager.DesktopApp.Models;
+    using VerifoneCommander.PriceBookManager.DesktopApp.ViewModels.Models;
 
     public class SettingsPageVm : PageVm
     {
@@ -52,5 +53,30 @@ namespace VerifoneCommander.PriceBookManager.DesktopApp.ViewModels
             get => this.settings.AllowUntrustedCertificates;
             set => this.settings.AllowUntrustedCertificates = value;
         }
+
+        public bool UseMocks
+        {
+            get => this.settings.UseMocks;
+            set
+            {
+                if (this.settings.UseMocks == value)
+                {
+                    return;
+                }
+
+                this.settings.UseMocks = value;
+                this.OnPropertyChanged(nameof(this.ActiveModeText));
+
+                // Switching takes effect immediately: end the session so the newly
+                // selected backend is used cleanly on the next login.
+                this.Messenger.Send(new ModeChangedMessage(value));
+            }
+        }
+
+        // Reflects the data source the app is currently using (updates as soon as the
+        // toggle flips), so the operator never mistakes a live session for a mock one.
+        public string ActiveModeText => this.settings.UseMocks
+            ? "This session is running on built-in MOCK data — changes are not sent to a controller."
+            : "This session is connected to the LIVE POS — edits, deletes, and imports affect the controller.";
     }
 }
